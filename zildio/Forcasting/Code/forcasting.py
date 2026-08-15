@@ -1,5 +1,19 @@
 from prophet import Prophet
 import pandas as pd
+from sqlalchemy import create_engine, text
+import sys
+sys.path.append(
+    "/workspaces/FORESIGHT-AI-Powered-Demand-Inventory-Intelligence-Platform/zildio/Data_base"
+)
+
+import Data_base
+
+# ==========================================================
+# LOAD DATA based on the provided paths
+# ==========================================================
+#engine = create_engine(
+ #   "postgresql+psycopg://neondb_owner:npg_L78TmfsVoiWY@ep-damp-rice-zapgu6fx-pooler.c-2.eu-west-2.aws.neon.tech/neondb?sslmode=require&channel_binding=require")
+
 
 def forecast_sales(df):
 
@@ -110,5 +124,9 @@ def forecast_sales(df):
     print(type(final_forecast))
     print(final_forecast.shape)
     print(final_forecast.columns)
-    final_forecast.to_csv("/workspaces/FORESIGHT-AI-Powered-Demand-Inventory-Intelligence-Platform/zildio/Forcasting/forecasted_sales.csv",index=False)
+
+    Data_base.save_data_to_db(final_forecast,"forecasted_sales")
+
+
+    print("Data saved successfully!")
     return final_forecast 

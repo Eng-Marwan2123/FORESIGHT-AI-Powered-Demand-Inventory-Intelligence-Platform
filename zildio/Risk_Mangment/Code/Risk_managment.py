@@ -1,4 +1,18 @@
 import pandas as pd
+from sqlalchemy import create_engine, text
+import sys
+
+sys.path.append(
+    "/workspaces/FORESIGHT-AI-Powered-Demand-Inventory-Intelligence-Platform/zildio/Data_base"
+)
+
+import Data_base
+
+# ==========================================================
+# LOAD DATA based on the provided paths
+# ==========================================================
+#engine = create_engine(
+ #   "postgresql+psycopg://neondb_owner:npg_L78TmfsVoiWY@ep-damp-rice-zapgu6fx-pooler.c-2.eu-west-2.aws.neon.tech/neondb?sslmode=require&channel_binding=require")
 
 
 def calculate_inventory_risk(df_inventory, df_forecast):
@@ -258,14 +272,14 @@ def calculate_inventory_risk(df_inventory, df_forecast):
         axis=1
     )
 
+    #save to PostgreSQL
+    Data_base.save_data_to_db(coverage_ratio,"inventory_risk")
+
+    print("Data saved successfully!")
+
     # -----------------------------
     # RETURN
     # -----------------------------
-
-    coverage_ratio.to_csv(
-        "/workspaces/FORESIGHT-AI-Powered-Demand-Inventory-Intelligence-Platform/zildio/Risk_Mangment/inventory_risk.csv",
-        index=False
-    )
 
     return coverage_ratio[
         [

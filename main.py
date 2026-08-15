@@ -140,3 +140,6 @@ print("\n========================================")
 print("Inventory Risk Data:")
 print("========================================")
 print(inventory_risk)
+
+
+

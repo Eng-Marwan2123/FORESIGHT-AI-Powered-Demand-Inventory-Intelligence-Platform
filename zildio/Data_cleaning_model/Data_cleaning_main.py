@@ -1,10 +1,16 @@
 import pandas as pd
+from sqlalchemy import create_engine, text
+import sys
+sys.path.append(
+    "/workspaces/FORESIGHT-AI-Powered-Demand-Inventory-Intelligence-Platform/zildio/Data_base"
+)
 
-
+import Data_base
 # ==========================================================
-# LOAD DATA
+# LOAD DATA based on the provided paths
 # ==========================================================
-
+#engine = create_engine(
+ #   "postgresql+psycopg://neondb_owner:npg_L78TmfsVoiWY@ep-damp-rice-zapgu6fx-pooler.c-2.eu-west-2.aws.neon.tech/neondb?sslmode=require&channel_binding=require")
 
 
 # ==========================================================
@@ -284,12 +290,25 @@ def clean_sales_data(df_sales, df_products):
     # RETURN RESULT
     # ======================================================
 
+ 
+# ============================================================
+# Uploading the data to DB 
+# ============================================================
+# 1 - Create a connection to the PostgreSQL database (Neon)
+    # Check that your DataFrame actually contains data
     if not df_sales.empty:
+
+        print(f"Cleaned sales rows: {len(df_sales)}")
+
+        Data_base.save_data_to_db(
+            df_sales,
+            "cleaned_sales"
+        )
+
         return df_sales
 
     else:
+
+        print("ERROR: Cleaned sales DataFrame is empty.")
+
         return -1
-
-    # Save to postgress 
-
-
