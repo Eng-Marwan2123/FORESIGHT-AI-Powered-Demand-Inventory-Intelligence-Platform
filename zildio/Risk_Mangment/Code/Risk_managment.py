@@ -2,11 +2,8 @@ import pandas as pd
 from sqlalchemy import create_engine, text
 import sys
 
-sys.path.append(
-    "/workspaces/FORESIGHT-AI-Powered-Demand-Inventory-Intelligence-Platform/zildio/Data_base"
-)
+from zildio.Data_base import Data_base
 
-import Data_base
 
 # ==========================================================
 # LOAD DATA based on the provided paths
