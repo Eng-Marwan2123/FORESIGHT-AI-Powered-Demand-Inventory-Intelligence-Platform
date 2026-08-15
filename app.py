@@ -17,25 +17,23 @@ from dotenv import load_dotenv
 # structure differs)
 # ============================================================
 ##
-##PROJECT_ROOT = "/workspaces/FORESIGHT-AI-Powered-Demand-Inventory-Intelligence-Platform/zildio"
+PROJECT_ROOT = "/workspaces/FORESIGHT-AI-Powered-Demand-Inventory-Intelligence-Platform/zildio"
 
-##for _module_path in [
-  ##  f"/workspaces/FORESIGHT-AI-Powered-Demand-Inventory-Intelligence-Platform/zildio/Data_cleaning_model",
-  ##  f"/workspaces/FORESIGHT-AI-Powered-Demand-Inventory-Intelligence-Platform/zildio/Forcasting/Code",
-   ## f"/workspaces/FORESIGHT-AI-Powered-Demand-Inventory-Intelligence-Platform/zildio/Risk_Mangment/Code",
-##]:
+for _module_path in [
+    f"/workspaces/FORESIGHT-AI-Powered-Demand-Inventory-Intelligence-Platform/zildio/Data_cleaning_model",
+    f"/workspaces/FORESIGHT-AI-Powered-Demand-Inventory-Intelligence-Platform/zildio/Forcasting/Code",
+    f"/workspaces/FORESIGHT-AI-Powered-Demand-Inventory-Intelligence-Platform/zildio/Risk_Mangment/Code",
+]:
 
-   ## if _module_path not in sys.path:
+    if _module_path not in sys.path:
 
-     ##   sys.path.append(_module_path)
+        sys.path.append(_module_path)
 
-##from Data_cleaning_main import clean_sales_data
-##from forcasting import forecast_sales
-##from Risk_managment import calculate_inventory_risk
+from Data_cleaning_main import clean_sales_data
+from forcasting import forecast_sales
+from Risk_managment import calculate_inventory_risk
 ##
-from zildio.Data_cleaning_model.Data_cleaning_main import clean_sales_data
-from zildio.Forcasting.Code.forcasting import forecast_sales
-from zildio.Risk_Mangment.Code.Risk_managment import calculate_inventory_risk
+
 # ============================================================
 # PAGE CONFIGURATION
 # ============================================================
