@@ -1,0 +1,8 @@
+{
+    "python.analysis.extraPaths": [
+        "./zildio/Risk_Mangment/Code",
+        "./zildio/Forcasting/Code",
+        "./zildio/Data_cleaning_model",
+        "./zildio/Risk_Mangment/Code"
+    ]
+}
