@@ -4,9 +4,7 @@ import pandas as pd
 # LOAD DATA based on the provided paths
 # after collect in the data from the cSV files, we will save the data in the PostgreSQL database (Neon)
 # ==========================================================
-engine = create_engine(
-    "postgresql+psycopg://neondb_owner:npg_L78TmfsVoiWY@ep-damp-rice-zapgu6fx-pooler.c-2.eu-west-2.aws.neon.tech/neondb?sslmode=require&channel_binding=require"
-)
+engine = create_engine("postgresql+psycopg://neondb_owner:npg_L78TmfsVoiWY@ep-damp-rice-zapgu6fx-pooler.c-2.eu-west-2.aws.neon.tech/neondb?sslmode=require&channel_binding=require")
 
 def save_data_to_db(df, table_name):
 
@@ -18,7 +16,7 @@ def save_data_to_db(df, table_name):
         table_name,
         engine,
         schema="public",
-        if_exists="append",
+        if_exists="replace",
         index=False
     )
 
