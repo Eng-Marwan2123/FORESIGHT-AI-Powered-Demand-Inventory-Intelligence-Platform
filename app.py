@@ -33,7 +33,6 @@ from dotenv import load_dotenv
 #from forcasting import forecast_sales
 #from Risk_managment import calculate_inventory_risk
 ##
-from zildio.Data_base import Data_base
 
 from zildio.Data_cleaning_model.Data_cleaning_main import (
     clean_sales_data
