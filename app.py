@@ -1007,6 +1007,12 @@ if not df_forecast.empty and {
 
     forecast_chart = df_forecast.copy()
 
+    sales_for_chart = (
+        df_sales.copy()
+        if not df_sales.empty
+        else pd.DataFrame()
+    )
+
     if selected_skus:
 
         forecast_chart = forecast_chart[
@@ -1015,11 +1021,77 @@ if not df_forecast.empty and {
             )
         ]
 
+        if not sales_for_chart.empty and "sku_id" in sales_for_chart.columns:
+
+            sales_for_chart = sales_for_chart[
+                sales_for_chart["sku_id"].isin(
+                    selected_skus
+                )
+            ]
+
+    # ----------------------------------------------------
+    # Clip the chart's start to the first actual sale date.
+    #
+    # forecasted_sales spans every "ds" Prophet produced per
+    # SKU, which starts at that SKU's own first month of data
+    # (often long before other SKUs have any sales, or before
+    # the dashboard's overall sales history begins). Showing
+    # that full range makes the Forecast line stretch far to
+    # the left of the first "Actual" point with nothing to
+    # compare it against. Clipping both series to start at the
+    # earliest real sale date keeps the chart anchored to data
+    # that's actually comparable, while still letting the
+    # forecast's 3 future months extend past the last one.
+    # ----------------------------------------------------
+
+    chart_start_date = None
+    last_actual_date = None
+
+    if (
+        not sales_for_chart.empty
+        and "sale_date" in sales_for_chart.columns
+    ):
+
+        chart_start_date = sales_for_chart["sale_date"].min()
+        last_actual_date = sales_for_chart["sale_date"].max()
+
+    if chart_start_date is not None and pd.notna(chart_start_date):
+
+        forecast_chart = forecast_chart[
+            forecast_chart["ds"] >= chart_start_date
+        ]
+
+    # ----------------------------------------------------
+    # Cap the forecast at 3 months past the last actual sale
+    # date, instead of showing each SKU's own full forecast
+    # window. Prophet's make_future_dataframe() extends 3
+    # months past each SKU's OWN last date - if SKUs have
+    # slightly different last sale dates, the aggregated
+    # forecast line can drift past the true "3 months from
+    # today" point. Anchoring to the overall last actual date
+    # keeps the future portion consistent and exactly 3 months
+    # long, matching what the pipeline intends to show.
+    # ----------------------------------------------------
+
+    forecast_cutoff_date = None
+
+    if last_actual_date is not None and pd.notna(last_actual_date):
+
+        forecast_cutoff_date = (
+            last_actual_date
+            + pd.DateOffset(months=3)
+        )
+
+        forecast_chart = forecast_chart[
+            forecast_chart["ds"] <= forecast_cutoff_date
+        ]
+
     daily_forecast = (
         forecast_chart
         .groupby("ds")["yhat"]
         .sum()
         .reset_index()
+        .sort_values("ds")
     )
 
     fig_forecast = go.Figure()
@@ -1048,21 +1120,13 @@ if not df_forecast.empty and {
     # to a whole month's forecast, making the forecast look artificially
     # 20-30x bigger than actual.
 
+    historical = pd.DataFrame()
+
     if (
-        not df_sales.empty
-        and "sale_date" in df_sales.columns
-        and "quantity" in df_sales.columns
+        not sales_for_chart.empty
+        and "sale_date" in sales_for_chart.columns
+        and "quantity" in sales_for_chart.columns
     ):
-
-        sales_for_chart = df_sales.copy()
-
-        if selected_skus:
-
-            sales_for_chart = sales_for_chart[
-                sales_for_chart["sku_id"].isin(
-                    selected_skus
-                )
-            ]
 
         # Roll each sale up to the first day of its month, matching
         # the monthly "ds" timestamps produced by forcasting.py.
@@ -1079,6 +1143,7 @@ if not df_forecast.empty and {
             .sum()
             .reset_index()
             .rename(columns={"sale_month": "sale_date"})
+            .sort_values("sale_date")
         )
 
         fig_forecast.add_trace(
@@ -1094,6 +1159,37 @@ if not df_forecast.empty and {
             )
         )
 
+    # Pin the x-axis range explicitly: start at the first actual
+    # sale date (or the first forecast date if there's no sales
+    # data at all), end at the last forecast date so the 3 future
+    # months remain visible.
+
+    range_start = (
+        chart_start_date
+        if chart_start_date is not None and pd.notna(chart_start_date)
+        else (
+            daily_forecast["ds"].min()
+            if not daily_forecast.empty
+            else None
+        )
+    )
+
+    range_end = (
+        forecast_cutoff_date
+        if forecast_cutoff_date is not None
+        else (
+            daily_forecast["ds"].max()
+            if not daily_forecast.empty
+            else None
+        )
+    )
+
+    xaxis_config = dict(showgrid=False)
+
+    if range_start is not None and range_end is not None:
+
+        xaxis_config["range"] = [range_start, range_end]
+
     fig_forecast.update_layout(
         height=360,
         margin=dict(
@@ -1107,9 +1203,7 @@ if not df_forecast.empty and {
         font=dict(
             color="#6b7280"
         ),
-        xaxis=dict(
-            showgrid=False
-        ),
+        xaxis=xaxis_config,
         yaxis=dict(
             gridcolor="rgba(120,140,170,0.12)"
         ),
@@ -1139,7 +1233,7 @@ st.subheader("Inventory Risk Matrix")
 
 st.caption(
     "Stockout risk vs. overstock risk. "
-    "The four quadrants identify the recommended inventory action."
+    "Bubble size = forecast demand at stake."
 )
 
 
@@ -1152,75 +1246,86 @@ if {
     scatter = filtered_risk.copy()
 
     # --------------------------------------------------------
-    # Risk classification
+    # Quadrant assignment for the VISUAL layout only.
     #
-    # IMPORTANT: color by the real `Action` column (produced by
-    # Risk_managment.py), not a re-derived quadrant. The previous
-    # version re-classified points using only 2 axis thresholds
-    # (stockout > 0.60 AND overstock > 0.60) to decide "Order ASAP",
-    # but the real Action logic flags "Order ASAP" whenever
-    # stockout_risk > 0.85 - regardless of overstock. That mismatch
-    # is why some genuine Order ASAP SKUs were never colored red:
-    # they didn't clear the chart's own (wrong) threshold. Using
-    # Action directly guarantees the chart always matches the
-    # Risk Summary counts below.
+    # This is a plain 50/50 split on each axis (matching the
+    # reference design), not the real Action thresholds from
+    # Risk_managment.py (which are asymmetric: 0.35 / 0.60 / 0.85
+    # and don't form clean rectangles). The true `Action` value
+    # is still shown on hover so it can be cross-checked - it's
+    # what drives the Risk Summary counts below, not this chart.
     # --------------------------------------------------------
 
-    if "Action" in scatter.columns:
+    def classify_quadrant(row):
 
-        color_field = "Action"
+        stockout = row["Stockout_Risk"]
+        overstock = row["overstock_risk"]
 
-    else:
+        if pd.isna(stockout) or pd.isna(overstock):
 
-        # Fallback if Action wasn't computed for some reason.
+            return "Unknown"
 
-        def classify_quadrant(row):
+        if stockout >= 0.5 and overstock < 0.5:
 
-            stockout = row["Stockout_Risk"]
-            overstock = row["overstock_risk"]
+            return "Reorder Now"
 
-            if pd.isna(stockout) or pd.isna(overstock):
+        elif stockout >= 0.5 and overstock >= 0.5:
 
-                return "Unknown"
+            return "Watch / Volatile"
 
-            if stockout > 0.85:
+        elif stockout < 0.5 and overstock < 0.5:
 
-                return "Order ASAP"
+            return "Healthy"
 
-            elif stockout > 0.60:
+        else:
 
-                return "Monitor"
+            return "Markdown / Clear"
 
-            elif stockout <= 0.35 and overstock > 0.60:
-
-                return "Overstock"
-
-            else:
-
-                return "Fine"
-
-        scatter["Action"] = scatter.apply(
-            classify_quadrant,
-            axis=1
-        )
-
-        color_field = "Action"
-
-    # Force a fixed category order so all 4 statuses always show
-    # in the legend, even if one has zero SKUs in the current filter.
+    scatter["Quadrant"] = scatter.apply(
+        classify_quadrant,
+        axis=1
+    )
 
     quadrant_order = [
-        "Fine",
-        "Monitor",
-        "Overstock",
-        "Order ASAP"
+        "Reorder Now",
+        "Watch / Volatile",
+        "Healthy",
+        "Markdown / Clear"
     ]
 
     quadrant_colors = {
-        "Fine": "#16c79a",
-        "Monitor": "#f5b642",
-        "Overstock": "#4c9aff",
-        "Order ASAP": "#ff3b5c"
+        "Reorder Now": "#c0605c",
+        "Watch / Volatile": "#d9a441",
+        "Healthy": "#5c9c7c",
+        "Markdown / Clear": "#8177c9"
+    }
+
+    quadrant_bg = {
+        "Reorder Now": "rgba(192,96,92,0.10)",
+        "Watch / Volatile": "rgba(217,164,65,0.12)",
+        "Healthy": "rgba(92,156,124,0.10)",
+        "Markdown / Clear": "rgba(129,119,201,0.10)"
+    }
+
+    size_field = (
+        "Forecast_demand"
+        if "Forecast_demand" in scatter.columns
+        else None
+    )
+
+    hover_data = {
+        "overstock_risk": ":.0%",
+        "Stockout_Risk": ":.0%",
+        "Total_stock": True,
+        "Forecast_demand": True,
+        "Coverage": ":.2f",
+        "Action": True
+    }
+
+    hover_data = {
+        column: fmt
+        for column, fmt in hover_data.items()
+        if column in scatter.columns
     }
 
 
@@ -1233,110 +1338,119 @@ if {
         x="overstock_risk",
         y="Stockout_Risk",
         hover_name="sku_id",
-        hover_data={
-            "overstock_risk": ":.0%",
-            "Stockout_Risk": ":.0%",
-            "Total_stock": True,
-            "Forecast_demand": True,
-            "Coverage": ":.2f",
-            color_field: True
-        },
-        size="Forecast_demand",
-        size_max=25,
-        color=color_field,
-        category_orders={color_field: quadrant_order},
+        hover_data=hover_data,
+        size=size_field,
+        size_max=32,
+        color="Quadrant",
+        category_orders={"Quadrant": quadrant_order},
         color_discrete_map=quadrant_colors
     )
 
-    # No SKU text on the markers themselves - too cluttered with
-    # many points overlapping. SKU is still shown on hover.
-
     fig_risk.update_traces(
-        mode="markers"
+        mode="markers",
+        marker=dict(line=dict(width=0))
     )
 
 
     # --------------------------------------------------------
-    # Quadrant lines
+    # Shaded quadrant backgrounds
     # --------------------------------------------------------
 
-    # --------------------------------------------------------
-    # Reference lines
-    #
-    # These mirror the actual thresholds used in Risk_managment.py's
-    # action_from_risk(): stockout_risk 0.35 and 0.85 mark the Fine /
-    # Monitor / Order ASAP bands, and overstock_risk 0.60 marks the
-    # Overstock cutoff (only relevant while stockout is low).
-    # --------------------------------------------------------
+    fig_risk.add_shape(
+        type="rect",
+        x0=0, x1=0.5, y0=0.5, y1=1.05,
+        fillcolor=quadrant_bg["Reorder Now"],
+        line_width=0,
+        layer="below"
+    )
+
+    fig_risk.add_shape(
+        type="rect",
+        x0=0.5, x1=1.05, y0=0.5, y1=1.05,
+        fillcolor=quadrant_bg["Watch / Volatile"],
+        line_width=0,
+        layer="below"
+    )
+
+    fig_risk.add_shape(
+        type="rect",
+        x0=0, x1=0.5, y0=0, y1=0.5,
+        fillcolor=quadrant_bg["Healthy"],
+        line_width=0,
+        layer="below"
+    )
+
+    fig_risk.add_shape(
+        type="rect",
+        x0=0.5, x1=1.05, y0=0, y1=0.5,
+        fillcolor=quadrant_bg["Markdown / Clear"],
+        line_width=0,
+        layer="below"
+    )
 
     fig_risk.add_vline(
-        x=0.60,
-        line_dash="dash",
+        x=0.5,
         line_width=1,
-        line_color="rgba(255,255,255,0.35)"
+        line_color="rgba(120,140,170,0.35)"
     )
 
     fig_risk.add_hline(
-        y=0.35,
-        line_dash="dot",
+        y=0.5,
         line_width=1,
-        line_color="rgba(255,255,255,0.20)"
-    )
-
-    fig_risk.add_hline(
-        y=0.85,
-        line_dash="dash",
-        line_width=1,
-        line_color="rgba(255,255,255,0.35)"
+        line_color="rgba(120,140,170,0.35)"
     )
 
 
     # --------------------------------------------------------
-    # Quadrant labels
+    # Quadrant title + subtitle labels
     # --------------------------------------------------------
 
     fig_risk.add_annotation(
-        x=0.50,
-        y=0.97,
-        text="<b>ORDER ASAP</b>",
+        x=0.02, y=1.03,
+        xanchor="left", yanchor="top", align="left",
         showarrow=False,
-        font=dict(
-            size=13,
-            color=quadrant_colors["Order ASAP"]
-        )
+        text=(
+            "<b>REORDER NOW</b><br>"
+            "<span style='font-size:11px;color:#6b7280'>"
+            "high stockout · low overstock</span>"
+        ),
+        font=dict(size=13, color=quadrant_colors["Reorder Now"])
     )
 
     fig_risk.add_annotation(
-        x=0.50,
-        y=0.72,
-        text="<b>MONITOR</b>",
+        x=0.98, y=1.03,
+        xanchor="right", yanchor="top", align="right",
         showarrow=False,
-        font=dict(
-            size=13,
-            color=quadrant_colors["Monitor"]
-        )
+        text=(
+            "<b>WATCH / VOLATILE</b><br>"
+            "<span style='font-size:11px;color:#6b7280'>"
+            "high on both — investigate</span>"
+        ),
+        font=dict(size=13, color=quadrant_colors["Watch / Volatile"])
     )
 
     fig_risk.add_annotation(
-        x=0.85,
-        y=0.17,
-        text="<b>OVERSTOCK</b>",
+        x=0.02, y=0.02,
+        xanchor="left", yanchor="bottom", align="left",
         showarrow=False,
-        font=dict(
-            size=13,
-            color=quadrant_colors["Overstock"]
-        )
+        text=(
+            "<b>HEALTHY</b><br>"
+            "<span style='font-size:11px;color:#6b7280'>"
+            "no action needed</span>"
+        ),
+        font=dict(size=13, color=quadrant_colors["Healthy"])
     )
 
     fig_risk.add_annotation(
-        x=0.20,
-        y=0.17,
-        text="<b>FINE</b>",
+        x=0.98, y=0.02,
+        xanchor="right", yanchor="bottom", align="right",
         showarrow=False,
-        font=dict(
-            size=13,
-            color=quadrant_colors["Fine"]
-        )
+        text=(
+            "<b>MARKDOWN / CLEAR</b><br>"
+            "<span style='font-size:11px;color:#6b7280'>"
+            "high overstock · low stockout</span>"
+        ),
+        font=dict(size=13, color=quadrant_colors["Markdown / Clear"])
     )
 
 
@@ -1357,15 +1471,15 @@ if {
         font=dict(
             color="#6b7280"
         ),
-        legend_title="Recommended Action",
+        showlegend=False,
         xaxis=dict(
-            title="Overstock Risk",
+            title="Overstock risk →",
             range=[0, 1.05],
             tickformat=".0%",
             gridcolor="rgba(120,140,170,0.12)"
         ),
         yaxis=dict(
-            title="Stockout Risk",
+            title="Stockout risk ↑",
             range=[0, 1.05],
             tickformat=".0%",
             gridcolor="rgba(120,140,170,0.12)"
