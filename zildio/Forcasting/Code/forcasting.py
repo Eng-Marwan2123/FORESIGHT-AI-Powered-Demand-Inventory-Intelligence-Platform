@@ -118,9 +118,8 @@ def forecast_sales(df):
         model = Prophet(
             changepoint_prior_scale=0.5,
             seasonality_mode="additive",  
-            weekly_seasonality=False,
+            weekly_seasonality=True,
             daily_seasonality=False,
-            monthly_seasonality=True 
         )
 
         model.fit(fit_frame)
