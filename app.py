@@ -1094,23 +1094,7 @@ if not df_forecast.empty and {
         .sort_values("ds")
     )
 
-    fig_forecast = go.Figure()
-
-    fig_forecast.add_trace(
-        go.Scatter(
-            x=daily_forecast["ds"],
-            y=daily_forecast["yhat"],
-            mode="lines",
-            name="Forecast",
-            line=dict(
-                width=3,
-                color="#16c79a"
-            ),
-            fill="tozeroy",
-            fillcolor="rgba(22,199,154,0.08)"
-        )
-    )
-
+    # ----------------------------------------------------
     # Historical sales
     #
     # forcasting.py trains Prophet on MONTHLY totals per SKU, so every
@@ -1119,6 +1103,10 @@ if not df_forecast.empty and {
     # monthly totals - otherwise a single day's sales gets plotted next
     # to a whole month's forecast, making the forecast look artificially
     # 20-30x bigger than actual.
+    #
+    # Computed here (before the Forecast trace) so its last point can
+    # be used to anchor where the Forecast line visually begins.
+    # ----------------------------------------------------
 
     historical = pd.DataFrame()
 
@@ -1145,6 +1133,76 @@ if not df_forecast.empty and {
             .rename(columns={"sale_month": "sale_date"})
             .sort_values("sale_date")
         )
+
+    # ----------------------------------------------------
+    # Only draw the Forecast line from the last actual sale
+    # date onward, anchored to start at the EXACT same point
+    # where Actual ends.
+    #
+    # forecasted_sales "ds" values are month-start timestamps
+    # (e.g. 2026-08-01), while the real last sale date can fall
+    # anywhere in that month (e.g. 2026-08-20). Simply filtering
+    # ds >= last_actual_date would drop that month's forecast
+    # point whenever the actual date isn't the 1st, leaving a
+    # gap instead of a connected line. Instead, drop any
+    # forecast point at or before the last actual month and
+    # prepend a synthetic point at (last_actual_date, last
+    # actual value) so the two lines always meet exactly.
+    # ----------------------------------------------------
+
+    if (
+        last_actual_date is not None
+        and pd.notna(last_actual_date)
+        and not historical.empty
+    ):
+
+        last_actual_month = (
+            pd.Timestamp(last_actual_date)
+            .to_period("M")
+            .to_timestamp()
+        )
+
+        future_only = daily_forecast[
+            daily_forecast["ds"] > last_actual_month
+        ].copy()
+
+        last_actual_value = historical.loc[
+            historical["sale_date"] == historical["sale_date"].max(),
+            "quantity"
+        ].iloc[0]
+
+        anchor_point = pd.DataFrame({
+            "ds": [last_actual_date],
+            "yhat": [last_actual_value]
+        })
+
+        forecast_line_data = pd.concat(
+            [anchor_point, future_only],
+            ignore_index=True
+        ).sort_values("ds")
+
+    else:
+
+        forecast_line_data = daily_forecast
+
+    fig_forecast = go.Figure()
+
+    fig_forecast.add_trace(
+        go.Scatter(
+            x=forecast_line_data["ds"],
+            y=forecast_line_data["yhat"],
+            mode="lines",
+            name="Forecast",
+            line=dict(
+                width=3,
+                color="#16c79a"
+            ),
+            fill="tozeroy",
+            fillcolor="rgba(22,199,154,0.08)"
+        )
+    )
+
+    if not historical.empty:
 
         fig_forecast.add_trace(
             go.Scatter(
@@ -1247,8 +1305,14 @@ if {
 
     # --------------------------------------------------------
     # Quadrant assignment for the VISUAL layout only.
- 
-    #--------------------------------------------------------
+    #
+    # This is a plain 50/50 split on each axis (matching the
+    # reference design), not the real Action thresholds from
+    # Risk_managment.py (which are asymmetric: 0.35 / 0.60 / 0.85
+    # and don't form clean rectangles). The true `Action` value
+    # is still shown on hover so it can be cross-checked - it's
+    # what drives the Risk Summary counts below, not this chart.
+    # --------------------------------------------------------
 
     def classify_quadrant(row):
 
@@ -1463,7 +1527,7 @@ if {
         paper_bgcolor="rgba(0,0,0,0)",
         plot_bgcolor="rgba(0,0,0,0)",
         font=dict(
-            color="#e8e9eb"
+            color="#6b7280"
         ),
         showlegend=False,
         xaxis=dict(
