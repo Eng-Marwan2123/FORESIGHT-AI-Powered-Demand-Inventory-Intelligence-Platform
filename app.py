@@ -1247,14 +1247,8 @@ if {
 
     # --------------------------------------------------------
     # Quadrant assignment for the VISUAL layout only.
-    #
-    # This is a plain 50/50 split on each axis (matching the
-    # reference design), not the real Action thresholds from
-    # Risk_managment.py (which are asymmetric: 0.35 / 0.60 / 0.85
-    # and don't form clean rectangles). The true `Action` value
-    # is still shown on hover so it can be cross-checked - it's
-    # what drives the Risk Summary counts below, not this chart.
-    # --------------------------------------------------------
+ 
+    #--------------------------------------------------------
 
     def classify_quadrant(row):
 
@@ -1469,7 +1463,7 @@ if {
         paper_bgcolor="rgba(0,0,0,0)",
         plot_bgcolor="rgba(0,0,0,0)",
         font=dict(
-            color="#6b7280"
+            color="#e8e9eb"
         ),
         showlegend=False,
         xaxis=dict(

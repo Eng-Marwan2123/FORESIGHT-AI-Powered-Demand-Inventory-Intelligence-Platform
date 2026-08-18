@@ -1,7 +1,7 @@
 from prophet import Prophet
 import pandas as pd
 import numpy as np
-from sqlalchemy import create_engine, text
+from sqlalchemy import create_engine, false, text
 import sys
 
 from zildio.Data_base import Data_base
@@ -114,12 +114,12 @@ def forecast_sales(df):
         # - yearly_seasonality only enabled once there's enough history
         #   (2+ years) to estimate it - with less data Prophet will
         #   happily "fit" a yearly cycle to noise.
-        # - weekly/daily seasonality disabled since the data is monthly.
         model = Prophet(
             changepoint_prior_scale=0.5,
             seasonality_mode="additive",  
-            weekly_seasonality=True,
+            weekly_seasonality=False,
             daily_seasonality=False,
+            yearly_seasonality=False if n_points < 24 else True 
         )
 
         model.fit(fit_frame)
